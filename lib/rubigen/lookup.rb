@@ -50,6 +50,10 @@ module RubiGen
     def self.included(base)
       base.extend(ClassMethods)
       # base.use_component_sources!  # TODO is this required since it has no scope/source context
+
+      class << base
+        class_attribute :_sources
+      end
     end
 
     # Convenience method to instantiate another generator.
@@ -60,7 +64,7 @@ module RubiGen
     module ClassMethods
       # The list of sources where we look, in order, for generators.
       def sources
-        if read_inheritable_attribute(:sources).blank?
+        if self._sources.blank?
           if superclass == RubiGen::Base
             superclass_sources = superclass.sources
             diff = superclass_sources.inject([]) do |mem, source|
@@ -69,11 +73,11 @@ module RubiGen
               mem << source unless found
               mem
             end
-            write_inheritable_attribute(:sources, diff)
+            self._sources = diff
           end
-          active.use_component_sources! if read_inheritable_attribute(:sources).blank?
+          active.use_component_sources! if self._sources.blank?
         end
-        read_inheritable_attribute(:sources)
+        self._sources
       end
 
       # Add a source to the end of the list.
@@ -84,22 +88,20 @@ module RubiGen
 
       # Add a source to the beginning of the list.
       def prepend_sources(*args)
-        sources = self.sources
-        reset_sources
-        write_inheritable_array(:sources, args.flatten + sources)
+        self._sources = args.flatten + self._sources
         invalidate_cache!
       end
 
       # Reset the source list.
       def reset_sources
-        write_inheritable_attribute(:sources, [])
+        self._sources = []
         invalidate_cache!
       end
       
       # Use application generators (app, ?).
       def use_application_sources!(*filters)
-        reset_sources
-        write_inheritable_attribute(:sources, application_sources(filters))
+        self._sources = application_sources(filters)
+        invalidate_cache!
       end
       
       def application_sources(filters = [])
@@ -124,7 +126,6 @@ module RubiGen
       # 5.  User home directory.  Search ~/.rubigen/rubygems_generators.
       # 6.  RubyGems.   Search for gems containing /rubygems_generators folder.
       def use_component_sources!(*filters)
-        reset_sources
         new_sources = []
         if defined? ::APP_ROOT
           new_sources << PathSource.new(:root, "#{::APP_ROOT}/generators")
@@ -132,7 +133,8 @@ module RubiGen
           new_sources << PathSource.new(:plugins, "#{::APP_ROOT}/vendor/plugins/*/**/generators")
         end
         new_sources << filtered_sources(filters)
-        write_inheritable_attribute(:sources, new_sources.flatten)
+        self._sources = new_sources.flatten
+        invalidate_cache!
       end
       
       def filtered_sources(filters)
